@@ -1,8 +1,11 @@
+import json
+
 import pytest
 import torch
 from transformers import Qwen2Config, Qwen2ForCausalLM
 
-from grpo_gl.grpo import clipped_surrogate, group_advantages, kl_to_reference, load_config
+from grpo_gl.grpo import (_append_csv, _drop_rows_after, clipped_surrogate, group_advantages,
+                           kl_to_reference, load_config)
 from grpo_gl.model import completion_logprobs, trim_at_stop
 
 
@@ -77,3 +80,17 @@ def test_config_overrides(tmp_path):
     assert (cfg.reward, cfg.steps, cfg.lr, cfg.name) == ("any_match", 7, 1e-4, "x")
     with pytest.raises(ValueError):
         load_config(["nonsense=1"])
+
+
+def test_resume_drops_log_rows_written_after_the_checkpoint(tmp_path):
+    log = tmp_path / "train.csv"
+    for step in range(1, 8):
+        _append_csv(log, {"step": step, "reward": step / 10})
+    _drop_rows_after(log, 5)
+    lines = log.read_text().splitlines()
+    assert lines[0] == "step,reward" and len(lines) == 6 and lines[-1].startswith("5,")
+
+    samples = tmp_path / "samples.jsonl"
+    samples.write_text("".join(json.dumps({"step": s, "output": "x"}) + "\n" for s in (0, 25, 50)))
+    _drop_rows_after(samples, 25)
+    assert len(samples.read_text().splitlines()) == 2

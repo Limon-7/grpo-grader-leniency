@@ -3,6 +3,9 @@
     python -m grpo_gl.grpo configs/strict.yaml
     python -m grpo_gl.grpo configs/strict.yaml steps=20 name=debug
 
+A run that is stopped and started again with the same command continues from
+its last checkpoint (written at every evaluation). Pass resume=false to start over.
+
 Each step: sample a group of completions per prompt, grade them, standardise
 the rewards within each group to get advantages, and take a clipped
 policy-gradient step on the log-probabilities of the sampled tokens. There is
@@ -37,12 +40,12 @@ class Config:
     model: str = "Qwen/Qwen2.5-0.5B-Instruct"
     reward: str = "strict"
     seed: int = 0
-    steps: int = 250
+    steps: int = 200
     prompts_per_step: int = 16
     group_size: int = 8
     max_new_tokens: int = 300
     temperature: float = 1.0
-    lr: float = 2e-5
+    lr: float = 1e-5
     warmup_steps: int = 10
     max_grad_norm: float = 1.0
     clip_eps: float = 0.2
@@ -52,9 +55,10 @@ class Config:
     micro_batch: int = 8  # completions per backward pass; the vocabulary-sized logits dominate memory
     lora_r: int = 32
     lora_alpha: int = 64
-    eval_every: int = 25
-    eval_size: int = 200
+    eval_every: int = 20
+    eval_size: int = 500
     out_dir: str = "runs"
+    resume: bool = True
 
 
 def load_config(argv: list[str]) -> Config:
@@ -182,14 +186,53 @@ def _append_csv(path: Path, row: dict):
         writer.writerow(row)
 
 
+def _lora_state(model) -> dict:
+    return {k: v for k, v in model.state_dict().items() if "lora_" in k}
+
+
+def save_checkpoint(path: Path, step: int, model, optimizer, schedule, queue, order_rng):
+    state = {
+        "step": step,
+        "lora": _lora_state(model),
+        "optimizer": optimizer.state_dict(),
+        "schedule": schedule.state_dict(),
+        "queue": [p.idx for p in queue],
+        "order_rng": order_rng.getstate(),
+        "torch_rng": torch.get_rng_state(),
+        "cuda_rng": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+    }
+    tmp = path.with_suffix(".tmp")
+    torch.save(state, tmp)
+    tmp.replace(path)  # a run killed mid-write leaves the previous checkpoint intact
+
+
+def _drop_rows_after(path: Path, step: int):
+    """Remove log rows written after the checkpoint, which the resumed run will produce again."""
+    if not path.exists():
+        return
+    if path.suffix == ".csv":
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        kept = [r for r in rows if int(r["step"]) <= step]
+        path.unlink()
+        for r in kept:
+            _append_csv(path, r)
+    else:
+        lines = [line for line in path.read_text().splitlines() if json.loads(line)["step"] <= step]
+        path.write_text("".join(line + "\n" for line in lines))
+
+
 def train(cfg: Config):
     random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     run_dir = Path(cfg.out_dir) / cfg.name
     run_dir.mkdir(parents=True, exist_ok=True)
-    for stale in ("train.csv", "eval.csv", "samples.jsonl"):
-        (run_dir / stale).unlink(missing_ok=True)
+    checkpoint = run_dir / "checkpoint.pt"
+    resuming = cfg.resume and checkpoint.exists()
+    if not resuming:
+        for stale in ("train.csv", "eval.csv", "samples.jsonl", "checkpoint.pt"):
+            (run_dir / stale).unlink(missing_ok=True)
     meta = {"config": asdict(cfg), "git_commit": _git_commit(), "torch": torch.__version__,
             "gpu": torch.cuda.get_device_name(0) if device == "cuda" else "cpu"}
     (run_dir / "config.json").write_text(json.dumps(meta, indent=2) + "\n")
@@ -217,8 +260,25 @@ def train(cfg: Config):
               f"well_formed={metrics['well_formed']:.3f} tokens={metrics['n_tokens']:.0f} "
               f"numbers={metrics['n_numbers']:.1f}", flush=True)
 
-    run_eval(0)
-    for step in range(1, cfg.steps + 1):
+    first_step = 1
+    if resuming:
+        state = torch.load(checkpoint, map_location="cpu", weights_only=False)
+        model.load_state_dict(state["lora"], strict=False)
+        optimizer.load_state_dict(state["optimizer"])
+        schedule.load_state_dict(state["schedule"])
+        by_idx = {p.idx: p for p in train_set}
+        queue = [by_idx[i] for i in state["queue"]]
+        order_rng.setstate(state["order_rng"])
+        torch.set_rng_state(state["torch_rng"])
+        if state["cuda_rng"] is not None:
+            torch.cuda.set_rng_state_all(state["cuda_rng"])
+        first_step = state["step"] + 1
+        for log in ("train.csv", "eval.csv", "samples.jsonl"):
+            _drop_rows_after(run_dir / log, state["step"])
+        print(f"resuming {cfg.name} from step {state['step']}", flush=True)
+    else:
+        run_eval(0)
+    for step in range(first_step, cfg.steps + 1):
         started = time.time()
         if len(queue) < cfg.prompts_per_step:
             queue.extend(order_rng.sample(train_set, len(train_set)))
@@ -254,6 +314,7 @@ def train(cfg: Config):
               f"loss={row['loss']:+.4f} {row['step_seconds']:.0f}s", flush=True)
         if step % cfg.eval_every == 0 or step == cfg.steps:
             run_eval(step)
+            save_checkpoint(checkpoint, step, model, optimizer, schedule, queue, order_rng)
 
     model.save_pretrained(run_dir / "adapter")
 
