@@ -1,0 +1,15 @@
+{
+  "n_tokens": 216.238,
+  "truncated": 0.276,
+  "strict": 0.108,
+  "lenient_last": 0.516,
+  "any_match": 0.608,
+  "format_bonus": 0.1416,
+  "well_formed": 0.168,
+  "n_tags": 0.182,
+  "n_numbers": 17.99,
+  "n_distinct_numbers": 7.836,
+  "n_chars": 717.394,
+  "multi_tag": 0.002,
+  "n": 500
+}
