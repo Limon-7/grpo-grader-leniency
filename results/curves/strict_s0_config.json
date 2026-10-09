@@ -1,0 +1,30 @@
+{
+  "config": {
+    "name": "strict_s0",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "reward": "strict",
+    "seed": 0,
+    "steps": 200,
+    "prompts_per_step": 16,
+    "group_size": 8,
+    "max_new_tokens": 300,
+    "temperature": 1.0,
+    "lr": 1e-05,
+    "warmup_steps": 10,
+    "max_grad_norm": 1.0,
+    "clip_eps": 0.2,
+    "beta": 0.0,
+    "updates_per_batch": 1,
+    "loss_norm": "sequence",
+    "micro_batch": 4,
+    "lora_r": 32,
+    "lora_alpha": 64,
+    "eval_every": 20,
+    "eval_size": 500,
+    "out_dir": "runs",
+    "resume": true
+  },
+  "git_commit": "ad0c461c28752a833b40f0d1ea1efb5960bad041",
+  "torch": "2.6.0+cu124",
+  "gpu": "NVIDIA RTX A5000"
+}

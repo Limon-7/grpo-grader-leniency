@@ -1,0 +1,15 @@
+{
+  "n_tokens": 9.250189537528431,
+  "truncated": 0.0,
+  "strict": 0.08263836239575435,
+  "lenient_last": 0.08263836239575435,
+  "any_match": 0.08263836239575435,
+  "format_bonus": 0.28263836239575435,
+  "well_formed": 1.0,
+  "n_tags": 1.0,
+  "n_numbers": 1.0,
+  "n_distinct_numbers": 1.0,
+  "n_chars": 19.25018953752843,
+  "multi_tag": 0.0,
+  "n": 1319
+}
