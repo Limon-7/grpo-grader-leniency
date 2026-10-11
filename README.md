@@ -2,7 +2,7 @@
 
 I implemented Group Relative Policy Optimization (GRPO) from scratch and used it to test what happens when the automatic grader providing the reinforcement learning reward is lenient instead of strict.
 
-![Grader Comparison](figures/graders.png)
+![Demo](assets/demo.gif)
 
 ## What I found
 
@@ -72,6 +72,8 @@ All models evaluated greedily on the full GSM8K test set (1,319 problems). Brack
 | **`any_match`** | Any Match | 0.0 [0.0, 0.0] | 44.7 [42.0, 47.4] | 61.5 [58.8, 64.1] | 0.0% | 207.4 | -52.3% [-55.0, -49.7] |
 | **`format_bonus`** | Format + Ans | 8.3 [6.8, 9.8] | 8.3 [6.8, 9.8] | 8.3 [6.8, 9.8] | **100.0%** | 9.3 | -44.1% [-47.0, -41.2] |
 
+![The same outputs, scored by three graders](figures/graders.png)
+
 ![Validation curves during training](figures/curves.png)
 
 ### The Anatomy of Grader Failures
@@ -80,16 +82,18 @@ All models evaluated greedily on the full GSM8K test set (1,319 problems). Brack
 2. **Reward Hacking via Enumeration (`any_match`)**: Because matching any number pays out 1.0, the policy learns to generate answers with many distinct numerical tokens (averaging 19.5 numbers per completion). The any-match accuracy rises to 61.5%, but true mathematical reasoning collapses.
 3. **Length Collapse via Dense Format Rewards (`format_bonus`)**: Adding a static reward for formatting creates a trivial local optimum. The policy collapses generation length from 227 tokens down to 9 tokens, outputting minimal boilerplate tags (e.g. `<answer>0</answer>`) immediately to harvest the guaranteed +0.2 reward.
 
-## Demo CLI
-
-I included a CLI script to ask the base model and all four trained checkpoints the same question and observe their generation style:
+## Demo
 
 ```bash
-# Run with the built-in GSM8K example:
-python scripts/demo.py
+uv run python scripts/export_demo_bundle.py    # once, after training
+uv run python demo/app.py
+```
 
-# Or pass any custom question and answer:
-python scripts/demo.py "A farmer has 15 cows and 24 sheep. He buys 7 more cows. How many animals does he have now?" 46
+The Gradio web app visualizes completions from all 5 models side-by-side with color-coded grader verdicts for test questions. `scripts/record_demo.py` regenerates the animated preview above using headless Chromium.
+
+You can also run the CLI demo on any problem:
+```bash
+python scripts/demo.py "A shop sells pens at 3 dollars each. How much do 12 pens cost?" 36
 ```
 
 ## Reproduce
@@ -119,10 +123,12 @@ Hardware used: Single NVIDIA RTX A5000 (24 GB VRAM). Training pairs share the GP
 ```
 configs/    YAML configurations for each training condition
 src/        Core package (grpo_gl): algorithm, graders, data, model
-scripts/    Experiment runner, evaluation analyzer, plotting, demo CLI
+demo/       Gradio interactive app and exported bundle
+scripts/    Experiment runner, evaluation analyzer, plotting, demo CLI, GIF recorder
 tests/      Unit tests for graders and GRPO loss/advantage functions
 results/    Test evaluation jsonl logs, summary.csv, and training curves
 figures/    Generated comparison figures (graders.png, curves.png)
+assets/     Demo preview recording (demo.gif)
 ```
 
 ## References
